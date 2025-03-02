@@ -1,5 +1,6 @@
 #include "console.h"
 #include "defs.h"
+#include "sbi.h"
 
 extern char e_text[];  // kernel.ld sets this to end of kernel code.
 extern char s_bss[];
