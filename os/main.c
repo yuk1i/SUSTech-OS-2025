@@ -6,7 +6,7 @@ extern char s_bss[];
 extern char e_bss[];
 extern char ekernel[], skernel[];
 
-uint64 global_variable = 114514;
+uint64 global_variable = 0xdeadbeef;
 
 void print_sysregs() {
     uint64 sstatus = r_sstatus();
@@ -34,7 +34,9 @@ void main() {
 
     printf("sysregs:\n");
     print_sysregs();
-    printf("%d", global_variable);
+    printf("%d\n", global_variable);
+
+    printf("kernel ends, parking...\n");
 
     while (1);
 }

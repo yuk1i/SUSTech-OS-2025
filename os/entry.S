@@ -1,9 +1,7 @@
     .section .text.entry
     .globl _entry
 _entry:
-    fence.i
-
-    la sp, boot_stack_top
+    lla sp, boot_stack_top
     call main
 
     .section .bss.stack
