@@ -34,7 +34,7 @@ void main() {
 
     printf("sysregs:\n");
     print_sysregs();
-    printf("%d\n", global_variable);
+    printf("%p\n", global_variable);
 
     printf("kernel ends, parking...\n");
 
