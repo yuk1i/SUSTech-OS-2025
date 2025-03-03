@@ -93,7 +93,7 @@ QEMU = qemu-system-riscv64
 QEMUOPTS = \
 	-nographic \
 	-machine virt \
-	-cpu rv64,svadu=off \
+	-cpu rv64 \
 	-m 512 \
 	-kernel build/kernel	\
 
