@@ -12,9 +12,6 @@ struct {
 
 int kalloc_inited = 0;
 
-// xv6-lab5: trace kernel page allocation & free.
-int lab5_trace_kallocpage = 0;
-
 extern uint64 __kva kpage_allocator_base;
 extern uint64 __kva kpage_allocator_size;
 static spinlock_t kpagelock;
@@ -32,7 +29,6 @@ void kpgmgrinit() {
 
     for (uint64 p = kpage_allocator_end - PGSIZE; p >= kpage_allocator_base; p -= PGSIZE) {
         kfreepage((void *)KVA_TO_PA(p));
-        freepages_count++;
     }
     kalloc_inited = 1;
 }
@@ -42,6 +38,7 @@ void kpgmgrinit() {
 // call to kalloc().  (The exception is when
 // initializing the allocator; see kinit above.)
 void kfreepage(void *__pa pa) {
+    uint64 ra = r_ra();  // who calls me?
     struct linklist *l;
 
     uint64 __kva kvaddr = PA_TO_KVA(pa);
@@ -50,10 +47,7 @@ void kfreepage(void *__pa pa) {
     memset((void *)kvaddr, 0xdd, PGSIZE);
 
     if (kalloc_inited)
-        debugf("free: %p", pa);
-    
-    if (lab5_trace_kallocpage)
-        infof("lab5-trace: %p", pa);
+        debugf("free: %p, called by %p", pa, ra);
 
     acquire(&kpagelock);
     l             = (struct linklist *)kvaddr;
@@ -86,10 +80,6 @@ void *__pa kallocpage() {
         warnf("out of memory, called by %p", ra);
         return 0;
     }
-    
-    if (lab5_trace_kallocpage)
-        infof("lab5-trace: %p", KVA_TO_PA((uint64)l));
-
     return (void *)KVA_TO_PA((uint64)l);
 }
 

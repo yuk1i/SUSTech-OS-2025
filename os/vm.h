@@ -56,9 +56,10 @@ pte_t* walk(struct mm* mm, uint64 va, int alloc);
 uint64 __pa walkaddr(struct mm* mm, uint64 va);
 uint64 useraddr(struct mm* mm, uint64 va);
 
-struct mm* mm_create();
+struct trapframe;
+struct mm *mm_create(struct trapframe* tf);
 struct vma* mm_create_vma(struct mm* mm);
-void mm_free_pages(struct mm* mm);
+void mm_free_vmas(struct mm* mm);
 void mm_free(struct mm* mm);
 int mm_mappages(struct vma* vma);
 int mm_remap(struct vma *vma, uint64 start, uint64 end, uint64 pte_flags);

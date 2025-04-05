@@ -2,19 +2,39 @@
 
 #include "../lib/user.h"
 
+char *argv[] = {"sh", NULL};
+
 int main(void) {
-    printf("init: I am the first user program!\n");
+    int pid, wpid;
 
-    // asm volatile(" csrw stvec, %0" : : "r"(0x80000000));
-    char buf[200];
-    memset(buf, 'A', sizeof(buf));
+    for (;;) {
+        printf("init: starting sh\n");
+        pid = fork();
+        if (pid < 0) {
+            printf("init: fork failed\n");
+            exit(1);
+        }
+        if (pid == 0) {
+            exec("sh", argv);
+            printf("init: exec sh failed\n");
+            exit(1);
+        }
 
-    while(1) {
-        printf("input> ");
-        stdout_flush();
-        int bytes = read(0, buf, sizeof(buf));
-        buf[bytes] = '\0';
-        printf("init: read %d bytes: %s", bytes, buf);
-        // no \n here, it's included in buf.
+        for (;;) {
+            // this call to wait() returns if the shell exits,
+            // or if a parentless process exits.
+            wpid = wait(-1, (int *)0);
+            if (wpid == pid) {
+                // the shell exited; restart it.
+                printf("init: sh exited, restarting...\n");
+                break;
+            } else if (wpid < 0) {
+                printf("init: wait returned an error\n");
+                exit(1);
+            } else {
+                // it was a parentless process; do nothing.
+                printf("init: wait a parentless process %d\n", wpid);
+            }
+        }
     }
 }

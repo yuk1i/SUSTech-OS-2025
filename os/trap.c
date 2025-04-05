@@ -140,19 +140,15 @@ static void handle_pgfault(void) {
         sfence_vma();
     } else {
         infof("page fault in application, bad addr = %p, bad instruction = %p, core dumped.", r_stval(), p->trapframe->epc);
-        setkilled(p);
+        setkilled(p, -2);
     }
 }
 
 static void unknown_trap(void) {
-    errorf("unknown trap: %p, stval = %p", r_scause(), r_stval());
     print_sysregs(true);
-    errorf("trapframe:");
-    struct trapframe *tf = curr_proc()->trapframe;
-    print_trapframe(tf);
-    errorf("user page table:");
     vm_print(curr_proc()->mm->pgt);
-    setkilled(curr_proc());
+    errorf("unknown trap: %p, stval = %p", r_scause(), r_stval());
+    setkilled(curr_proc(), -3);
 }
 
 // handle an interrupt, exception, or system call from user space.
@@ -169,13 +165,14 @@ void usertrap() {
     struct proc *p              = curr_proc();
     struct trapframe *trapframe = p->trapframe;
     tracef("trap from user epc = %p", trapframe->epc);
+    int killed;
 
     uint64 cause = r_scause();
     if (cause & SCAUSE_INTERRUPT) {
         which_dev = handle_intr();
     } else if (cause == UserEnvCall) {
-        if (iskilled(p))
-            exit(-1);
+        if ((killed = iskilled(p)) != 0)
+            exit(killed);
 
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
@@ -193,8 +190,8 @@ void usertrap() {
     }
 
     // are we still alive?
-    if (iskilled(p))
-        exit(-1);
+    if ((killed = iskilled(p)) != 0)
+        exit(killed);
 
     // if it's a timer intr, call yield to give up CPU.
     if (which_dev == 1)

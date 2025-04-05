@@ -83,8 +83,12 @@ uint64 useraddr(struct mm *mm, uint64 va) {
     return page | (va & 0xFFFULL);
 }
 
-// Create a mm structure and a page table.
-struct mm *mm_create() {
+/**
+ * @brief Create a new mm structure and a page table.
+ * 
+ * Then map the trapframe and trampoline in the new mm.
+ */
+struct mm *mm_create(struct trapframe *tf) {
     struct mm *mm = kalloc(&mm_allocator);
     memset(mm, 0, sizeof(*mm));
     spinlock_init(&mm->lock, "mm");
@@ -93,16 +97,24 @@ struct mm *mm_create() {
 
     void *pa = kallocpage();
     if (!pa) {
-        warnf("kallocpage failed");
+        warnf("kallocpage failed for root page table");
         goto free_mm;
     }
     mm->pgt = (pagetable_t)PA_TO_KVA(pa);
     memset(mm->pgt, 0, PGSIZE);
-
     acquire(&mm->lock);
+
+    // map trapframe and trampoline in the new mm
+    if (mm_mappageat(mm, TRAMPOLINE, KIVA_TO_PA(trampoline), PTE_A | PTE_R | PTE_X) < 0)
+        goto free_mm;
+
+    if (mm_mappageat(mm, TRAPFRAME, KVA_TO_PA(tf), PTE_A | PTE_D | PTE_R | PTE_W))
+        goto free_mm;
+
     return mm;
 
 free_mm:
+    release(&mm->lock);
     kfree(&mm_allocator, mm);
     return NULL;
 }
@@ -134,7 +146,7 @@ static void freevma(struct vma *vma, int free_phy_page) {
     sfence_vma();
 }
 
-void mm_free_pages(struct mm *mm) {
+void mm_free_vmas(struct mm *mm) {
     assert(holding(&mm->lock));
 
     struct vma *next, *vma = mm->vma;
@@ -147,6 +159,9 @@ void mm_free_pages(struct mm *mm) {
     mm->vma = NULL;
 }
 
+/**
+ * @brief Free the page table, recursively. But do not free the PA stored in PTE.
+ */
 static void freepgt(pagetable_t pgt) {
     for (int i = 0; i < 512; i++) {
         if ((pgt[i] & PTE_V) && (pgt[i] & PTE_RWX) == 0) {
@@ -157,19 +172,18 @@ static void freepgt(pagetable_t pgt) {
     kfreepage((void *)KVA_TO_PA(pgt));
 }
 
+/**
+ * @brief Free the mm structure, including all VMAs and the page table.
+ */
 void mm_free(struct mm *mm) {
     assert(holding(&mm->lock));
     assert(mm->refcnt > 0);
 
-    mm_free_pages(mm);
+    mm_free_vmas(mm);
     freepgt(mm->pgt);
 
-    int oldref = mm->refcnt--;
     release(&mm->lock);
-
-    if (oldref == 1) {
-        kfree(&mm_allocator, mm);
-    }
+    kfree(&mm_allocator, mm);
 }
 
 static int vma_check_overlap(struct mm *mm, uint64 start, uint64 end, struct vma *exclude) {
@@ -193,7 +207,8 @@ static int vma_check_overlap(struct mm *mm, uint64 start, uint64 end, struct vma
 /**
  * @brief Map virtual address defined in @vma.
  * Addresses must be aligned to PGSIZE.
- * Physical pages are allocated automatically.
+ * Physical pages are allocated automatically. 
+ * If allocation fails, the already-mapped PAs are freed. Then the vma is freed.
  * Caller should then use walkaddr to resolve the mapped PA, and do initialization.
  *
  * @param vma
@@ -220,20 +235,24 @@ int mm_mappages(struct vma *vma) {
     uint64 va;
     void *pa;
     pte_t *pte;
+    int ret = 0;
 
     for (va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
         if ((pte = walk(mm, va, 1)) == 0) {
             errorf("pte invalid, va = %p", va);
-            return -EINVAL;
+            ret = -ENOMEM;
+            goto bad;
         }
         if (*pte & PTE_V) {
             errorf("remap %p", va);
-            return -EINVAL;
+            ret = -EINVAL;
+            goto bad;
         }
         pa = kallocpage();
         if (!pa) {
             errorf("kallocpage");
-            return -ENOMEM;
+            ret = -ENOMEM;
+            goto bad;
         }
         // memset((void *)PA_TO_KVA(pa), 0, PGSIZE);
         *pte = PA2PTE(pa) | vma->pte_flags | PTE_V;
@@ -244,10 +263,15 @@ int mm_mappages(struct vma *vma) {
     mm->vma   = vma;
 
     return 0;
+
+bad:
+    freevma(vma, true);
+    kfree(&vma_allocator, vma);
+    return ret;
 }
 
 // Remap a range of virtual address to a new range.
-// The new range must not overlap with any existing range. 
+// The new range must not overlap with any existing range.
 // Used in sbrk.
 int mm_remap(struct vma *vma, uint64 start, uint64 end, uint64 pte_flags) {
     assert(PGALIGNED(start));
@@ -387,8 +411,7 @@ int mm_copy(struct mm *old, struct mm *new) {
         if (mm_mappages(new_vma)) {
             warnf("mm_mappages failed");
             // when failed, new_vma is not inserted into mm->vma list.
-            //  free it by hand.
-            freevma(new_vma, true);
+            // , and it is freed by mm_mappages.
             goto err;
         }
         for (uint64 va = vma->vm_start; va < vma->vm_end; va += PGSIZE) {
@@ -401,14 +424,14 @@ int mm_copy(struct mm *old, struct mm *new) {
 
     return 0;
 err:
-    mm_free_pages(new);
+    mm_free_vmas(new);
     return -ENOMEM;
 }
 
-struct vma* mm_find_vma(struct mm* mm, uint64 va) {
+struct vma *mm_find_vma(struct mm *mm, uint64 va) {
     assert(holding(&mm->lock));
 
-    struct vma* vma = mm->vma;
+    struct vma *vma = mm->vma;
     while (vma) {
         if (va == vma->vm_start) {
             return vma;
