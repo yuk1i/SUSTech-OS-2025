@@ -5,6 +5,7 @@
 #include "loader.h"
 #include "queue.h"
 #include "trap.h"
+#include "debug.h"
 
 struct proc *pool[NPROC];
 struct proc *init_proc = NULL;
@@ -249,6 +250,10 @@ int exec(char *name, char *args[]) {
     }
 
     release(&p->lock);
+
+    infof("exec-ed %s, mm structure: ", name);
+    // xv6-lab6: print mm structure.
+    mm_print(p->mm);
 
     // syscall() will overwrite trapframe->a0 to the return value.
     return p->trapframe->a0;
