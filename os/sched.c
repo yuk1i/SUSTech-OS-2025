@@ -133,6 +133,9 @@ void yield() {
     struct proc *p = curr_proc();
     debugf("yield: (%d)%p", p->pid, p);
 
+    // lab9 cpu scheduling:
+    infof("yield: %d", p->pid);
+
     acquire(&p->lock);
     p->state = RUNNABLE;
     sched();
