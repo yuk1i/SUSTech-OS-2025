@@ -1,6 +1,6 @@
 import os
 
-TARGET_DIR = "./user/target/stripped/"
+TARGET_DIR = "./user/build/stripped/"
 
 import argparse
 
@@ -10,8 +10,8 @@ if __name__ == '__main__':
     apps.sort()
     f.write(
 '''
-    .align 8
-    .section .data
+    .align 3
+    .section .rodata
     .global user_apps
 user_apps:
 '''
@@ -38,7 +38,7 @@ f'''
     # include apps elf file.
     f.write(
 '''
-    .section .data.apps
+    .section .rodata.apps
 '''
     )
     for app in apps:
@@ -46,9 +46,9 @@ f'''
 f'''
 .str_{app}:
     .string "{app}"
-.align 8
+.align 3
 .elf_{app}:
-    .incbin "./user/target/stripped/{app}"
+    .incbin "{TARGET_DIR}{app}"
 '''
     )
     f.close()

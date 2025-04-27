@@ -11,4 +11,4 @@ int strlen(const char *);
 int strncmp(const char *, const char *, uint);
 char *strncpy(char *, const char *, int);
 
-#endif  // STRING_H
+#endif // STRING_H

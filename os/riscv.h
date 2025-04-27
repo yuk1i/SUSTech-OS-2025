@@ -3,47 +3,14 @@
 
 #include "types.h"
 
-// which hart (core) is this?
-static inline uint64 r_mhartid() {
-    uint64 x;
-    asm volatile("csrr %0, mhartid" : "=r"(x));
-    return x;
-}
-
-// Machine Status Register, mstatus
-
-#define MSTATUS_MPP_MASK (3L << 11)  // previous mode.
-#define MSTATUS_MPP_M    (3L << 11)
-#define MSTATUS_MPP_S    (1L << 11)
-#define MSTATUS_MPP_U    (0L << 11)
-#define MSTATUS_MIE      (1L << 3)  // machine-mode interrupt enable.
-
-static inline uint64 r_mstatus() {
-    uint64 x;
-    asm volatile("csrr %0, mstatus" : "=r"(x));
-    return x;
-}
-
-static inline void w_mstatus(uint64 x) {
-    asm volatile("csrw mstatus, %0" : : "r"(x));
-}
-
-// machine exception program counter, holds the
-// instruction address to which a return from
-// exception will go.
-static inline void w_mepc(uint64 x) {
-    asm volatile("csrw mepc, %0" : : "r"(x));
-}
+// make the vscode language server happy
+#define asm __asm__
 
 // Supervisor Status Register, sstatus
-
-#define SSTATUS_SUM (1L << 18)  // SUM (permit Supervisor User Memory access)
-
-#define SSTATUS_SPP  (1L << 8)  // Previous mode, 1=Supervisor, 0=User
-#define SSTATUS_SPIE (1L << 5)  // Supervisor Previous Interrupt Enable
-#define SSTATUS_UPIE (1L << 4)  // User Previous Interrupt Enable
-#define SSTATUS_SIE  (1L << 1)  // Supervisor Interrupt Enable
-#define SSTATUS_UIE  (1L << 0)  // User Interrupt Enable
+#define SSTATUS_SUM  (1L << 18)  // SUM (permit Supervisor User Memory access)
+#define SSTATUS_SPP  (1L << 8)   // Previous mode, 1=Supervisor, 0=User
+#define SSTATUS_SPIE (1L << 5)   // Supervisor Previous Interrupt Enable
+#define SSTATUS_SIE  (1L << 1)   // Supervisor Interrupt Enable
 
 static inline uint64 r_sstatus() {
     uint64 x;
@@ -66,6 +33,11 @@ static inline void w_sip(uint64 x) {
     asm volatile("csrw sip, %0" : : "r"(x));
 }
 
+static inline void w_stimecmp(uint64 x) {
+    // asm volatile("csrw stimecmp, %0" : : "r" (x));
+    asm volatile("csrw 0x14d, %0" : : "r"(x));
+}
+
 // Supervisor Interrupt Enable
 #define SIE_SEIE (1L << 9)  // external
 #define SIE_STIE (1L << 5)  // timer
@@ -78,20 +50,6 @@ static inline uint64 r_sie() {
 
 static inline void w_sie(uint64 x) {
     asm volatile("csrw sie, %0" : : "r"(x));
-}
-
-// Machine-mode Interrupt Enable
-#define MIE_MEIE (1L << 11)  // external
-#define MIE_MTIE (1L << 7)   // timer
-#define MIE_MSIE (1L << 3)   // software
-static inline uint64 r_mie() {
-    uint64 x;
-    asm volatile("csrr %0, mie" : "=r"(x));
-    return x;
-}
-
-static inline void w_mie(uint64 x) {
-    asm volatile("csrw mie, %0" : : "r"(x));
 }
 
 // machine exception program counter, holds the
@@ -107,28 +65,6 @@ static inline uint64 r_sepc() {
     return x;
 }
 
-// Machine Exception Delegation
-static inline uint64 r_medeleg() {
-    uint64 x;
-    asm volatile("csrr %0, medeleg" : "=r"(x));
-    return x;
-}
-
-static inline void w_medeleg(uint64 x) {
-    asm volatile("csrw medeleg, %0" : : "r"(x));
-}
-
-// Machine Interrupt Delegation
-static inline uint64 r_mideleg() {
-    uint64 x;
-    asm volatile("csrr %0, mideleg" : "=r"(x));
-    return x;
-}
-
-static inline void w_mideleg(uint64 x) {
-    asm volatile("csrw mideleg, %0" : : "r"(x));
-}
-
 // Supervisor Trap-Vector Base Address
 // low two bits are mode.
 static inline void w_stvec(uint64 x) {
@@ -139,11 +75,6 @@ static inline uint64 r_stvec() {
     uint64 x;
     asm volatile("csrr %0, stvec" : "=r"(x));
     return x;
-}
-
-// Machine-mode interrupt vector
-static inline void w_mtvec(uint64 x) {
-    asm volatile("csrw mtvec, %0" : : "r"(x));
 }
 
 // use riscv's sv39 page table scheme.
@@ -187,17 +118,6 @@ static inline uint64 r_stval() {
     return x;
 }
 
-// Machine-mode Counter-Enable
-static inline void w_mcounteren(uint64 x) {
-    asm volatile("csrw mcounteren, %0" : : "r"(x));
-}
-
-static inline uint64 r_mcounteren() {
-    uint64 x;
-    asm volatile("csrr %0, mcounteren" : "=r"(x));
-    return x;
-}
-
 // machine-mode cycle counter
 static inline uint64 r_time() {
     uint64 x;
@@ -207,12 +127,17 @@ static inline uint64 r_time() {
 
 // enable device interrupts
 static inline void intr_on() {
-    w_sstatus(r_sstatus() | SSTATUS_SIE);
+    // set SIE bit
+    asm volatile("csrrs x0, sstatus, %0" ::"r"(SSTATUS_SIE));
+    // w_sstatus(r_sstatus() | SSTATUS_SIE);
 }
 
-// disable device interrupts
-static inline void intr_off() {
-    w_sstatus(r_sstatus() & ~SSTATUS_SIE);
+// disable device interrupts, return whether it opens before off.
+static inline int64 intr_off() {
+    uint64 prev;
+    asm volatile("csrrc %0, sstatus, %1" : "=r"(prev) : "r"(SSTATUS_SIE));
+    return (prev & SSTATUS_SIE) != 0;
+    // w_sstatus(r_sstatus() & ~SSTATUS_SIE);
 }
 
 // are device interrupts enabled?
@@ -245,6 +170,12 @@ static inline uint64 r_ra() {
     return x;
 }
 
+static inline uint64 r_pc() {
+    uint64 pc;
+    asm volatile("auipc %0, 0" : "=r"(pc));
+    return pc;
+}
+
 // flush the TLB.
 static inline void sfence_vma() {
     // the zero, zero means flush all TLB entries.
@@ -270,6 +201,8 @@ static inline void sfence_vma() {
 #define PTE_G (1L << 5)
 #define PTE_A (1L << 6)
 #define PTE_D (1L << 7)
+
+#define PTE_RWX (PTE_R | PTE_W | PTE_X)
 
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
