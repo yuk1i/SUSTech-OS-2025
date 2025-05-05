@@ -220,6 +220,10 @@ static void bootcpu_init() {
     timer_init();
     plicinithart();
 
+    extern void synclab_init();
+    synclab_init();
+    // init sync lab
+
     MEMORY_FENCE();
     halt_specific_init = 1;
     MEMORY_FENCE();

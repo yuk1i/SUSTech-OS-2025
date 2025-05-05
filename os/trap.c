@@ -68,10 +68,22 @@ void kernel_trap(struct ktrapframe *ktf) {
         if (panicked) {
             panic("other CPU has panicked");
         }
+        int whichdev = 0;
         // handle interrupt
-        if (handle_intr() == 0) {
+        if ((whichdev = handle_intr()) == 0) {
             errorf("unhandled interrupt: %d", cause);
             goto kernel_panic;
+        }
+        if (whichdev == 1 && curr_proc() != NULL) {
+            uint64 sepc, sstatus;
+            sepc   = r_sepc();
+            sstatus = r_sstatus();
+            mycpu()->inkernel_trap--;
+            warnf("kernel thread preempt");
+            yield();
+            mycpu()->inkernel_trap++;
+            w_sepc(sepc);
+            w_sstatus(sstatus);
         }
     } else {
         // kernel exception, unexpected.
